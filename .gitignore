@@ -1,0 +1,110 @@
+# ============================================================
+#  sentinel-health-engine-be — .gitignore
+# ============================================================
+
+# ── Go ────────────────────────────────────────────────────────
+# Binarios compilados
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Archivos de test y cobertura
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Cache de módulos Go (workspace)
+go.work.sum
+
+# Vendor (si se usa, descomenta)
+# vendor/
+
+# ── Variables de entorno y secretos ───────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+local.settings.json
+
+# ── Azure ─────────────────────────────────────────────────────
+# Parámetros de despliegue con valores reales
+infra/azure/bicep/*.parameters.json
+infra/azure/scripts/*.sh.local
+
+# Credenciales de Azure CLI
+.azure/
+
+# ── IDEs y editores ───────────────────────────────────────────
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json.example
+
+# GoLand / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+\#*\#
+.\#*
+
+# ── Sistema operativo ─────────────────────────────────────────
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V7
+.Trashes
+Icon?
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ── Docker ────────────────────────────────────────────────────
+# Override de docker-compose con configuración local
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── SQL / Base de datos ───────────────────────────────────────
+# Dumps y backups locales
+*.sql.bak
+*.bak
+*.dump
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+
+# ── Certificados y llaves (nunca al repo) ─────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+
+# ── Archivos temporales de build ──────────────────────────────
+*.tmp
+*.temp
+.cache/
