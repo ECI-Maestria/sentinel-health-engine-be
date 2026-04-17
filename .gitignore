@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Environment files — NEVER commit secrets
+# .env.example files are intentionally committed (no secrets, just documentation)
+.env
+.env.*
+!.env.example
+
+# Firebase credentials
+firebase-credentials.json
+*-credentials.json
+*-service-account.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker overrides
+docker-compose.override.yml
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Logs
+*.log
