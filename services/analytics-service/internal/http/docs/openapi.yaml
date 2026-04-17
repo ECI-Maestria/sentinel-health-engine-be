@@ -1,0 +1,651 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Health Engine – Analytics Service API
+  description: |
+    REST API for the **analytics-service** microservice of the Sentinel Health Engine platform.
+
+    ## Authentication
+    Most endpoints require a **Bearer JWT** obtained from `POST /v1/auth/login` on the user-service.
+    Include it in the `Authorization` header:
+    ```
+    Authorization: Bearer <accessToken>
+    ```
+
+    ## Role-based access
+    | Role | Description |
+    |------|-------------|
+    | `DOCTOR` | Full access — can generate PDF reports |
+    | `PATIENT` | Can view own vitals, alerts, and summaries |
+    | `CARETAKER` | Can view assigned patient data and generate reports |
+  version: 1.0.0
+  contact:
+    name: Sentinel Health Engine
+  license:
+    name: Private
+
+servers:
+  - url: http://localhost:8084
+    description: Local development
+  - url: https://analytics-service.your-azure-domain.com
+    description: Azure production
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Vitals
+    description: Patient vitals history, latest reading, and summary statistics
+  - name: Alerts
+    description: Patient alert history and statistics
+  - name: Reports
+    description: PDF report generation
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security Schemes
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from POST /v1/auth/login on user-service
+
+  schemas:
+    # ── Common ──────────────────────────────────────────────────────────────
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "unauthorized"
+      required: [error]
+
+    # ── Vitals ──────────────────────────────────────────────────────────────
+    VitalReading:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        deviceId:
+          type: string
+          format: uuid
+          example: "660e9400-e29b-41d4-a716-556655440001"
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        heartRate:
+          type: integer
+          description: Heart rate in beats per minute
+          example: 72
+        spO2:
+          type: number
+          format: float
+          description: Blood oxygen saturation percentage
+          example: 98.5
+        measuredAt:
+          type: string
+          format: date-time
+          description: Timestamp when the reading was taken on the device
+          example: "2024-01-15T10:30:00Z"
+        receivedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the reading was received by the platform
+          example: "2024-01-15T10:30:05Z"
+      required: [id, deviceId, patientId, heartRate, spO2, measuredAt, receivedAt]
+
+    VitalsHistoryResponse:
+      type: object
+      properties:
+        readings:
+          type: array
+          items:
+            $ref: '#/components/schemas/VitalReading'
+      required: [readings]
+
+    VitalsSummaryMetric:
+      type: object
+      properties:
+        min:
+          type: number
+          format: float
+        max:
+          type: number
+          format: float
+        avg:
+          type: number
+          format: float
+      required: [min, max, avg]
+
+    VitalsSummaryResponse:
+      type: object
+      properties:
+        heartRate:
+          $ref: '#/components/schemas/VitalsSummaryMetric'
+          description: Heart rate statistics (bpm)
+        spO2:
+          $ref: '#/components/schemas/VitalsSummaryMetric'
+          description: Blood oxygen saturation statistics (%)
+        count:
+          type: integer
+          description: Total number of readings in the requested period
+          example: 150
+      required: [heartRate, spO2, count]
+      example:
+        heartRate:
+          min: 60
+          max: 120
+          avg: 80.5
+        spO2:
+          min: 94.0
+          max: 99.0
+          avg: 97.2
+        count: 150
+
+    # ── Alerts ──────────────────────────────────────────────────────────────
+    AlertSeverity:
+      type: string
+      enum: [WARNING, CRITICAL]
+      example: WARNING
+
+    AlertStatus:
+      type: string
+      enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+      example: OPEN
+
+    AlertViolation:
+      type: object
+      description: A single threshold violation that contributed to this alert
+      properties:
+        metric:
+          type: string
+          description: Name of the metric that was out of range
+          example: "heartRate"
+        value:
+          type: number
+          format: float
+          description: The actual measured value
+          example: 130.0
+        threshold:
+          type: number
+          format: float
+          description: The threshold that was exceeded
+          example: 120.0
+        direction:
+          type: string
+          enum: [ABOVE, BELOW]
+          description: Whether the value was above or below the threshold
+          example: ABOVE
+      required: [metric, value, threshold, direction]
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        readingId:
+          type: string
+          format: uuid
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        message:
+          type: string
+          description: Human-readable alert description
+          example: "Patient heart rate exceeded critical threshold"
+        severity:
+          $ref: '#/components/schemas/AlertSeverity'
+        status:
+          $ref: '#/components/schemas/AlertStatus'
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertViolation'
+          description: List of individual threshold violations
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:35:00Z"
+      required: [id, patientId, readingId, message, severity, status, violations, createdAt]
+
+    AlertsHistoryResponse:
+      type: object
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+      required: [alerts]
+
+    AlertsStatsResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of alerts in the requested period
+          example: 25
+        warning:
+          type: integer
+          description: Number of WARNING severity alerts
+          example: 20
+        critical:
+          type: integer
+          description: Number of CRITICAL severity alerts
+          example: 5
+        lastAlertAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the most recent alert, or null if no alerts exist
+          example: "2024-01-15T10:35:00Z"
+      required: [total, warning, critical, lastAlertAt]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Reusable Parameters
+# ─────────────────────────────────────────────────────────────────────────────
+    # (parameters defined inline at path level for clarity)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns 200 when the service is up. No authentication required.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: analytics-service
+                required: [status, service]
+
+  # ── Vitals ────────────────────────────────────────────────────────────────
+  /v1/patients/{id}/vitals/history:
+    get:
+      tags: [Vitals]
+      summary: Get vitals history
+      description: |
+        Returns a paginated list of vital readings for the specified patient
+        within the requested time range. Defaults to the last 30 days.
+      operationId: getVitalsHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: from
+          in: query
+          description: Start of the time range (ISO 8601 date). Defaults to 30 days ago.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-01"
+        - name: to
+          in: query
+          description: End of the time range (ISO 8601 date). Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-31"
+      responses:
+        '200':
+          description: Vitals history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VitalsHistoryResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/vitals/latest:
+    get:
+      tags: [Vitals]
+      summary: Get latest vital reading
+      description: |
+        Returns the most recent vital reading for the specified patient.
+        Returns 404 if no readings exist for this patient.
+      operationId: getLatestVitals
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Latest vital reading
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VitalReading'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found or no readings available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/vitals/summary:
+    get:
+      tags: [Vitals]
+      summary: Get vitals summary
+      description: |
+        Returns aggregate statistics (min, max, avg) for heart rate and SpO2
+        over the requested time window. Defaults to the last 30 days.
+      operationId: getVitalsSummary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: from
+          in: query
+          description: Start of the time range (ISO 8601 date). Defaults to 30 days ago.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-01"
+        - name: to
+          in: query
+          description: End of the time range (ISO 8601 date). Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-31"
+      responses:
+        '200':
+          description: Vitals summary statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VitalsSummaryResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Alerts ────────────────────────────────────────────────────────────────
+  /v1/patients/{id}/alerts/history:
+    get:
+      tags: [Alerts]
+      summary: Get alerts history
+      description: |
+        Returns the alert history for the specified patient within the requested
+        time range. Optionally filter by severity.
+      operationId: getAlertsHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: from
+          in: query
+          description: Start of the time range (ISO 8601 date). Defaults to 30 days ago.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-01"
+        - name: to
+          in: query
+          description: End of the time range (ISO 8601 date). Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-31"
+        - name: severity
+          in: query
+          description: Filter alerts by severity level. Returns all severities if omitted.
+          required: false
+          schema:
+            type: string
+            enum: [WARNING, CRITICAL]
+          example: CRITICAL
+      responses:
+        '200':
+          description: Alerts history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsHistoryResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/alerts/stats:
+    get:
+      tags: [Alerts]
+      summary: Get alerts statistics
+      description: |
+        Returns aggregate alert counts broken down by severity for the specified
+        patient within the requested time window.
+      operationId: getAlertsStats
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: from
+          in: query
+          description: Start of the time range (ISO 8601 date). Defaults to 30 days ago.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-01"
+        - name: to
+          in: query
+          description: End of the time range (ISO 8601 date). Defaults to now.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2024-01-31"
+      responses:
+        '200':
+          description: Alert statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsStatsResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Reports ───────────────────────────────────────────────────────────────
+  /v1/patients/{id}/reports/generate:
+    post:
+      tags: [Reports]
+      summary: Generate PDF report
+      description: |
+        Generates a PDF health report for the specified patient covering the
+        requested date range. The report includes vitals history, summary
+        statistics, and alert events.
+
+        **Requires DOCTOR or CARETAKER role.**
+
+        The response is a binary PDF file (`application/pdf`).
+      operationId: generateReport
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from:
+                  type: string
+                  format: date
+                  description: Start date of the report period (inclusive)
+                  example: "2024-01-01"
+                to:
+                  type: string
+                  format: date
+                  description: End date of the report period (inclusive)
+                  example: "2024-01-31"
+      responses:
+        '200':
+          description: PDF report generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+                description: Binary PDF file content
+        '400':
+          description: Invalid request body or date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR or CARETAKER required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

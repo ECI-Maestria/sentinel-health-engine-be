@@ -1,0 +1,42 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "telemetry-service",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /c/Users/dmurc/OneDrive/Documentos/MSCS-ECI/sentinel-health-engine/services/telemetry-service && PORT=8081 go run ./cmd/server/..."
+      ],
+      "port": 8081
+    },
+    {
+      "name": "health-rules-service",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /c/Users/dmurc/OneDrive/Documentos/MSCS-ECI/sentinel-health-engine/services/health-rules-service && PORT=8082 go run ./cmd/server/..."
+      ],
+      "port": 8082
+    },
+    {
+      "name": "alerts-service",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /c/Users/dmurc/OneDrive/Documentos\MSCS-ECI/sentinel-health-engine/services/alerts-service && PORT=8083 go run ./cmd/server/..."
+      ],
+      "port": 8083
+    },
+    {
+      "name": "all-services",
+      "runtimeExecutable": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+      "runtimeArgs": [
+        "compose",
+        "-f", "C:\\Users\\dmurc\\OneDrive\\Documentos\\MSCS-ECI\\sentinel-health-engine\\docker-compose.yml",
+        "up", "--build"
+      ],
+      "port": 8081
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+# Local development — services connect to real Azure resources via .env files.
+# Azurite emulates Azure Blob Storage for IoT Hub checkpoint storage.
+# PostgreSQL runs as a local container for user-service (no Azure needed locally).
+
+services:
+
+  # ── user-service ───────────────────────────────────────────────────────────
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - services/user-service/.env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── telemetry-service ──────────────────────────────────────────────────────
+  telemetry-service:
+    build:
+      context: .
+      dockerfile: services/telemetry-service/Dockerfile
+    ports:
+      - "8081:8080"
+    env_file:
+      - services/telemetry-service/.env
+    restart: unless-stopped
+    depends_on:
+      - azurite
+
+  # ── health-rules-service ───────────────────────────────────────────────────
+  health-rules-service:
+    build:
+      context: .
+      dockerfile: services/health-rules-service/Dockerfile
+    ports:
+      - "8082:8080"
+    env_file:
+      - services/health-rules-service/.env
+    restart: unless-stopped
+
+  # ── alerts-service ─────────────────────────────────────────────────────────
+  alerts-service:
+    build:
+      context: .
+      dockerfile: services/alerts-service/Dockerfile
+    ports:
+      - "8083:8080"
+    env_file:
+      - services/alerts-service/.env
+    restart: unless-stopped
+    volumes:
+      - ./services/alerts-service/firebase-credentials.json:/app/firebase-credentials.json:ro
+
+  # ── analytics-service ─────────────────────────────────────────────────────
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    ports:
+      - "8084:8080"
+    env_file:
+      - services/analytics-service/.env
+    restart: unless-stopped
+
+  # ── calendar-service ───────────────────────────────────────────────────────
+  calendar-service:
+    build:
+      context: .
+      dockerfile: services/calendar-service/Dockerfile
+    ports:
+      - "8085:8080"
+    env_file:
+      - services/calendar-service/.env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── PostgreSQL (local only — user-service database) ────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sentinel_users
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Azurite (Azure Storage emulator for IoT Hub checkpointing) ─────────────
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+    command: "azurite-blob --blobHost 0.0.0.0"
+
+volumes:
+  postgres_data:
+  azurite_data:

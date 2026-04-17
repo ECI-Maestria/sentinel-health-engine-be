@@ -1,0 +1,11 @@
+go 1.23.0
+
+use (
+	./services/alerts-service
+	./services/analytics-service
+	./services/calendar-service
+	./services/health-rules-service
+	./services/telemetry-service
+	./services/user-service
+	./shared
+)

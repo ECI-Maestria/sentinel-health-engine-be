@@ -1,0 +1,1526 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Health Engine – User Service API
+  description: |
+    REST API for the **user-service** microservice of the Sentinel Health Engine platform.
+
+    ## Authentication
+    Most endpoints require a **Bearer JWT** obtained from `POST /v1/auth/login`.
+    Include it in the `Authorization` header:
+    ```
+    Authorization: Bearer <accessToken>
+    ```
+
+    ## Role-based access
+    | Role | Description |
+    |------|-------------|
+    | `DOCTOR` | Full access — can create patients and caretakers |
+    | `PATIENT` | Can manage own devices and caretaker relationships |
+    | `CARETAKER` | Read-only access to assigned patient data |
+
+    ## Internal endpoints
+    Endpoints under `/v1/internal/` are **service-to-service only** and require the
+    `X-Internal-API-Key` header. They are not accessible by end users.
+  version: 1.0.0
+  contact:
+    name: Sentinel Health Engine
+  license:
+    name: Private
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://user-service.your-azure-domain.com
+    description: Azure production
+
+tags:
+  - name: Auth
+    description: Authentication and password management
+  - name: Users
+    description: User profile
+  - name: Doctors
+    description: Doctor account management (Doctor only)
+  - name: Patients
+    description: Patient management (Doctor only)
+  - name: Devices
+    description: Mobile device registration for push notifications
+  - name: Caretakers
+    description: Caretaker accounts and patient–caretaker relationships
+  - name: Internal
+    description: Service-to-service endpoints (API key required)
+  - name: Health
+    description: Service health check
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security Schemes
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from POST /v1/auth/login
+    InternalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-API-Key
+      description: Shared secret for service-to-service communication
+
+  schemas:
+    # ── Common ──────────────────────────────────────────────────────────────
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "invalid credentials"
+      required: [error]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    # ── Auth ────────────────────────────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: doctor@hospital.com
+        password:
+          type: string
+          format: password
+          minLength: 1
+          example: "MySecureP@ss1"
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: JWT valid for 1 hour
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refreshToken:
+          type: string
+          description: JWT valid for 7 days
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      required: [accessToken, refreshToken]
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword:
+          type: string
+          format: password
+          example: "OldPassword123"
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: "NewPassword456"
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: patient@example.com
+
+    VerifyResetCodeRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: 6-digit OTP code received via email
+          minLength: 6
+          maxLength: 6
+          pattern: '^\d{6}$'
+          example: "483921"
+
+    VerifyResetCodeResponse:
+      type: object
+      properties:
+        maskedEmail:
+          type: string
+          description: Partially masked email confirming code ownership
+          example: "d***@hospital.com"
+
+    ResetPasswordRequest:
+      type: object
+      required: [code, newPassword]
+      properties:
+        code:
+          type: string
+          description: 6-digit OTP code received via the password reset email
+          minLength: 6
+          maxLength: 6
+          pattern: '^\d{6}$'
+          example: "483921"
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: "MyNewSecurePass1"
+
+    # ── User ────────────────────────────────────────────────────────────────
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        email:
+          type: string
+          format: email
+          example: "patient@example.com"
+        role:
+          type: string
+          enum: [DOCTOR, PATIENT, CARETAKER]
+          example: PATIENT
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        fullName:
+          type: string
+          example: "John Doe"
+        isActive:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+      required: [id, email, role, firstName, lastName, fullName, isActive, createdAt]
+
+    # ── Doctor ──────────────────────────────────────────────────────────────
+    CreateDoctorRequest:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName:
+          type: string
+          example: "Ana"
+        lastName:
+          type: string
+          example: "Martínez"
+        email:
+          type: string
+          format: email
+          example: "ana.martinez@hospital.com"
+      description: >
+        Creates a DOCTOR account. A temporary password is auto-generated and
+        sent to the doctor's email along with a welcome message.
+
+    DoctorListResponse:
+      type: object
+      properties:
+        doctors:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+      required: [doctors]
+
+    # ── Patient ─────────────────────────────────────────────────────────────
+    CreatePatientRequest:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName:
+          type: string
+          example: "Maria"
+        lastName:
+          type: string
+          example: "García"
+        email:
+          type: string
+          format: email
+          example: "maria.garcia@example.com"
+      description: >
+        Creates a PATIENT account. A temporary password is auto-generated and
+        sent to the patient's email along with a welcome message.
+
+    PatientListResponse:
+      type: object
+      properties:
+        patients:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+      required: [patients]
+
+    # ── Device ──────────────────────────────────────────────────────────────
+    RegisterDeviceRequest:
+      type: object
+      required: [deviceIdentifier, fcmToken, platform]
+      properties:
+        deviceIdentifier:
+          type: string
+          description: Azure IoT Hub device ID assigned to this physical device
+          example: "patient-001-android"
+        fcmToken:
+          type: string
+          description: Firebase Cloud Messaging registration token
+          example: "fMEkW2y1TZ..."
+        platform:
+          type: string
+          enum: [ANDROID, IOS]
+          example: ANDROID
+        name:
+          type: string
+          description: Human-friendly device name (optional)
+          example: "Samsung Galaxy S24"
+
+    DeviceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "660e9400-e29b-41d4-a716-556655440001"
+        deviceIdentifier:
+          type: string
+          example: "patient-001-android"
+        platform:
+          type: string
+          enum: [ANDROID, IOS]
+          example: ANDROID
+        name:
+          type: string
+          example: "Samsung Galaxy S24"
+        isActive:
+          type: boolean
+          example: true
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-01-15T10:30:00Z"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-10T08:00:00Z"
+      required: [id, deviceIdentifier, platform, name, isActive, createdAt]
+
+    DeviceListResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceResponse'
+      required: [devices]
+
+    # ── Caretaker ───────────────────────────────────────────────────────────
+    CreateCaretakerRequest:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName:
+          type: string
+          example: "Carlos"
+        lastName:
+          type: string
+          example: "López"
+        email:
+          type: string
+          format: email
+          example: "carlos.lopez@example.com"
+      description: >
+        Creates a CARETAKER account. A temporary password is auto-generated and
+        sent to the caretaker's email.
+
+    SelfRegisterCaretakerRequest:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName:
+          type: string
+          example: "Luis"
+        lastName:
+          type: string
+          example: "Pérez"
+        email:
+          type: string
+          format: email
+          example: "luis.perez@example.com"
+      description: >
+        Self-registration for caretakers. No authentication required.
+        A temporary password is auto-generated and sent by email.
+        The account is fully functional but the caretaker will see an
+        "unlinked" state until a doctor or patient links them to a patient.
+
+    LinkCaretakerRequest:
+      type: object
+      description: >
+        Provide either `caretakerId` (UUID) or `caretakerEmail` to identify the caretaker.
+        At least one of the two fields is required.
+      properties:
+        caretakerId:
+          type: string
+          format: uuid
+          description: UUID of the caretaker — use this if you know the ID
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        caretakerEmail:
+          type: string
+          format: email
+          description: Email of the caretaker — use this when the caretaker self-registered
+          example: "luis.perez@example.com"
+
+    MyPatientResponse:
+      type: object
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        fullName:
+          type: string
+          example: "Maria García"
+        email:
+          type: string
+          format: email
+          example: "maria.garcia@example.com"
+        linkedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T12:00:00Z"
+      required: [patientId, fullName, email, linkedAt]
+
+    MyPatientsResponse:
+      type: object
+      properties:
+        patients:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyPatientResponse'
+          description: Patients linked to this caretaker. Empty array means not yet linked.
+        isLinked:
+          type: boolean
+          description: Convenience flag — true if patients array is non-empty
+          example: false
+      required: [patients, isLinked]
+
+    CaretakerRelationshipResponse:
+      type: object
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        caretakerId:
+          type: string
+          format: uuid
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        fullName:
+          type: string
+          example: "Carlos López"
+        email:
+          type: string
+          format: email
+          example: "carlos.lopez@example.com"
+        linkedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T12:00:00Z"
+      required: [patientId, caretakerId, fullName, email, linkedAt]
+
+    CaretakerListResponse:
+      type: object
+      properties:
+        caretakers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaretakerRelationshipResponse'
+      required: [caretakers]
+
+    # ── Doctor Dashboard ────────────────────────────────────────────────────
+    DoctorDashboardPatient:
+      type: object
+      description: Condensed patient summary shown in the doctor dashboard
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        email:
+          type: string
+          format: email
+          example: "patient@example.com"
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        fullName:
+          type: string
+          example: "John Doe"
+        isActive:
+          type: boolean
+          example: true
+        deviceCount:
+          type: integer
+          description: Number of registered devices for this patient
+          example: 2
+        caretakerCount:
+          type: integer
+          description: Number of linked caretakers for this patient
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+      required: [id, email, firstName, lastName, fullName, isActive, deviceCount, caretakerCount, createdAt]
+
+    DoctorDashboardResponse:
+      type: object
+      properties:
+        patients:
+          type: array
+          items:
+            $ref: '#/components/schemas/DoctorDashboardPatient'
+      required: [patients]
+
+    # ── Complete Patient Profile ──────────────────────────────────────────────
+    CompletePatientProfileResponse:
+      type: object
+      description: Full patient record including linked devices and caretakers
+      properties:
+        patient:
+          $ref: '#/components/schemas/UserResponse'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceResponse'
+          description: All registered devices for this patient
+        caretakers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaretakerRelationshipResponse'
+          description: All caretakers linked to this patient
+      required: [patient, devices, caretakers]
+
+    # ── Internal ─────────────────────────────────────────────────────────────
+    ValidateDeviceResponse:
+      type: object
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        userId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        deviceId:
+          type: string
+          format: uuid
+          example: "660e9400-e29b-41d4-a716-556655440001"
+        isActive:
+          type: boolean
+          example: true
+      required: [patientId, userId, deviceId, isActive]
+
+    ContactEntry:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "patient@example.com"
+        fcmToken:
+          type: string
+          description: Latest FCM token; omitted if the user has no registered device
+          example: "fMEkW2y1TZ..."
+      required: [email]
+
+    PatientContactsResponse:
+      type: object
+      properties:
+        contacts:
+          type: array
+          description: Patient + all linked caretakers
+          items:
+            $ref: '#/components/schemas/ContactEntry'
+      required: [contacts]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns 200 when the service is up.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: user-service
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: Authenticates a user and returns an access + refresh token pair.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh tokens
+      description: |
+        Exchanges a valid refresh token for a new access + refresh token pair.
+        The old refresh token is invalidated.
+      operationId: refreshTokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Expired or invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      description: Changes the password of the currently authenticated user.
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "password changed successfully"
+        '400':
+          description: Wrong old password or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      description: |
+        Sends a 6-digit OTP code to the given email address.
+
+        **Always returns 200** regardless of whether the email exists —
+        this prevents email enumeration attacks.
+
+        The code is delivered via email and expires after **1 minute**.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Request acknowledged (email may or may not exist)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "if the email exists, a 6-digit reset code has been sent"
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/verify-reset-code:
+    post:
+      tags: [Auth]
+      summary: Verify OTP reset code
+      description: |
+        Validates a 6-digit OTP code without consuming it.
+        On success returns a masked version of the email so the UI can
+        confirm ownership (e.g. `"d***@hospital.com"`).
+
+        The code remains valid and must be re-submitted in `/reset-password`.
+        Use this endpoint between the "enter code" screen and the
+        "new password" screen to give immediate feedback to the user.
+      operationId: verifyResetCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyResetCodeRequest'
+      responses:
+        '200':
+          description: Code is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResetCodeResponse'
+              example:
+                maskedEmail: "d***@hospital.com"
+        '400':
+          description: Invalid or expired code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with OTP code
+      description: |
+        Sets a new password using the 6-digit OTP code from the reset email.
+        The code is single-use and expires after **1 minute**.
+
+        **Expected flow:**
+        1. `POST /forgot-password` — request code
+        2. `POST /verify-reset-code` — validate code (UI feedback)
+        3. `POST /reset-password` — set new password (consumes code)
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "password reset successfully"
+        '400':
+          description: Invalid, expired, or already-used code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Users ─────────────────────────────────────────────────────────────────
+  /v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get my profile
+      description: Returns the profile of the currently authenticated user.
+      operationId: getMe
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Doctors ───────────────────────────────────────────────────────────────
+  /v1/doctors:
+    post:
+      tags: [Doctors]
+      summary: Create doctor
+      description: |
+        Registers a new **DOCTOR** account.
+
+        A 12-character temporary password is auto-generated and sent to the
+        new doctor's email address along with a welcome message.
+
+        **Requires DOCTOR role** — only an existing doctor can create another doctor.
+      operationId: createDoctor
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDoctorRequest'
+      responses:
+        '201':
+          description: Doctor created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error or email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Doctors]
+      summary: List all doctors
+      description: Returns all active doctors in the system. **Requires DOCTOR role.**
+      operationId: listDoctors
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of doctors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorListResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Patients ──────────────────────────────────────────────────────────────
+  /v1/patients:
+    post:
+      tags: [Patients]
+      summary: Create patient
+      description: |
+        Registers a new **PATIENT** account.
+
+        A 12-character temporary password is auto-generated and sent to the
+        patient's email address along with a welcome message.
+
+        **Requires DOCTOR role.**
+      operationId: createPatient
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePatientRequest'
+      responses:
+        '201':
+          description: Patient created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error or email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Patients]
+      summary: List all patients
+      description: Returns all active patients in the system. **Requires DOCTOR role.**
+      operationId: listPatients
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientListResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}:
+    get:
+      tags: [Patients]
+      summary: Get patient by ID
+      description: Returns a single patient by UUID. **Requires DOCTOR role.**
+      operationId: getPatient
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Patient found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/doctor/dashboard:
+    get:
+      tags: [Users]
+      summary: Doctor dashboard
+      description: |
+        Returns a summary list of all patients assigned to the authenticated doctor,
+        including device and caretaker counts for each patient.
+
+        **Requires DOCTOR role.**
+      operationId: getDoctorDashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Doctor dashboard data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorDashboardResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/profile/complete:
+    get:
+      tags: [Patients]
+      summary: Get complete patient profile
+      description: |
+        Returns the full patient profile including all registered devices and
+        all linked caretaker relationships in a single response.
+
+        **Requires DOCTOR role.**
+      operationId: getCompletePatientProfile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Complete patient profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletePatientProfileResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Devices ───────────────────────────────────────────────────────────────
+  /v1/devices/register:
+    post:
+      tags: [Devices]
+      summary: Register / update device
+      description: |
+        Registers a new mobile device or updates an existing one (upsert by `deviceIdentifier`).
+
+        Should be called by the **mobile app on every login** to keep the FCM token
+        up to date so push notifications reach the correct device.
+      operationId: registerDevice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+      responses:
+        '200':
+          description: Device registered or updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/devices:
+    get:
+      tags: [Devices]
+      summary: List my devices
+      description: Returns all active devices registered by the currently authenticated user.
+      operationId: listDevices
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of devices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Caretakers ────────────────────────────────────────────────────────────
+  /v1/caretakers/register:
+    post:
+      tags: [Caretakers]
+      summary: Self-register as caretaker
+      description: |
+        **Public endpoint — no authentication required.**
+
+        Allows anyone to create their own **CARETAKER** account.
+        A 12-character temporary password is auto-generated and sent to the
+        provided email address.
+
+        Once registered, the caretaker can log in but will see an *"unlinked"*
+        state (`isLinked: false`) until a doctor or patient links them to a
+        patient via `POST /v1/patients/{id}/caretakers`.
+      operationId: selfRegisterCaretaker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfRegisterCaretakerRequest'
+      responses:
+        '201':
+          description: Caretaker account created — credentials sent by email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error or email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/caretakers/me/patients:
+    get:
+      tags: [Caretakers]
+      summary: Get my linked patients
+      description: |
+        Returns all patients linked to the authenticated caretaker.
+
+        Use the `isLinked` field (or check `patients.length === 0`) to determine
+        whether to show the *"No estás vinculado a ningún paciente"* banner.
+
+        **Requires CARETAKER role.**
+      operationId: getMyPatients
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Linked patients (may be empty)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyPatientsResponse'
+              examples:
+                linked:
+                  summary: Caretaker linked to one patient
+                  value:
+                    isLinked: true
+                    patients:
+                      - patientId: "550e8400-e29b-41d4-a716-446655440000"
+                        fullName: "Maria García"
+                        email: "maria.garcia@example.com"
+                        linkedAt: "2024-01-15T12:00:00Z"
+                unlinked:
+                  summary: Caretaker not yet linked
+                  value:
+                    isLinked: false
+                    patients: []
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (CARETAKER required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/caretakers:
+    post:
+      tags: [Caretakers]
+      summary: Create caretaker account
+      description: |
+        Registers a new **CARETAKER** account.
+
+        A 12-character temporary password is auto-generated and sent by email.
+        After creation, the caretaker must be linked to a patient via
+        `POST /v1/patients/{id}/caretakers`.
+
+        **Requires DOCTOR role.**
+      operationId: createCaretaker
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaretakerRequest'
+      responses:
+        '201':
+          description: Caretaker account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error or email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/caretakers:
+    post:
+      tags: [Caretakers]
+      summary: Link caretaker to patient
+      description: |
+        Creates a patient–caretaker relationship.
+
+        You can identify the caretaker by **UUID** (`caretakerId`) or by **email**
+        (`caretakerEmail`). At least one of the two must be provided.
+
+        Typical flow when the caretaker self-registered:
+        1. Caretaker calls `POST /v1/caretakers/register` with their data.
+        2. Doctor or patient calls this endpoint with `caretakerEmail`.
+
+        **Requires DOCTOR or PATIENT role.**
+      operationId: linkCaretaker
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkCaretakerRequest'
+      responses:
+        '201':
+          description: Caretaker linked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "caretaker linked successfully"
+        '400':
+          description: Validation error or relationship already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Caretakers]
+      summary: List caretakers of a patient
+      description: Returns all caretakers linked to the given patient.
+      operationId: listCaretakers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: List of caretaker relationships
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaretakerListResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/caretakers/{caretakerId}:
+    delete:
+      tags: [Caretakers]
+      summary: Unlink caretaker from patient
+      description: |
+        Removes the patient–caretaker relationship.
+
+        **Requires DOCTOR or PATIENT role.**
+      operationId: unlinkCaretaker
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: caretakerId
+          in: path
+          description: Caretaker UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "770e8400-e29b-41d4-a716-446655440002"
+      responses:
+        '200':
+          description: Caretaker unlinked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "caretaker unlinked successfully"
+        '400':
+          description: Relationship not found or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Internal (service-to-service) ─────────────────────────────────────────
+  /v1/internal/devices/{identifier}:
+    get:
+      tags: [Internal]
+      summary: Validate IoT device
+      description: |
+        Resolves an Azure IoT Hub device identifier to the owning patient.
+
+        Used by **telemetry-service** to authorize incoming telemetry and
+        obtain the patient ID for downstream processing.
+
+        🔑 Requires `X-Internal-API-Key` header.
+      operationId: validateDevice
+      security:
+        - InternalApiKey: []
+      parameters:
+        - name: identifier
+          in: path
+          description: Azure IoT Hub device identifier
+          required: true
+          schema:
+            type: string
+          example: "patient-001-android"
+      responses:
+        '200':
+          description: Device found and authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateDeviceResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/internal/patients/{id}/contacts:
+    get:
+      tags: [Internal]
+      summary: Get patient contacts
+      description: |
+        Returns the patient and all linked caretakers with their email
+        and latest FCM token.
+
+        Used by **alerts-service** to determine push + email recipients
+        when an alert is generated.
+
+        🔑 Requires `X-Internal-API-Key` header.
+      operationId: getPatientContacts
+      security:
+        - InternalApiKey: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Contact list retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientContactsResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

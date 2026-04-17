@@ -1,0 +1,1258 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Health Engine – Calendar Service API
+  description: |
+    REST API for the **calendar-service** microservice of the Sentinel Health Engine platform.
+
+    Manages patient appointments, medication schedules, and reminders.
+
+    ## Authentication
+    All endpoints (except `/health`) require a **Bearer JWT** obtained from
+    `POST /v1/auth/login` on the user-service.
+    ```
+    Authorization: Bearer <accessToken>
+    ```
+
+    ## Role-based access
+    | Role | Description |
+    |------|-------------|
+    | `DOCTOR` | Full access — can create/update/delete appointments and medications |
+    | `PATIENT` | Read access to own data; can manage own reminders |
+    | `CARETAKER` | Read access to assigned patient data; can manage reminders |
+  version: 1.0.0
+  contact:
+    name: Sentinel Health Engine
+  license:
+    name: Private
+
+servers:
+  - url: http://localhost:8085
+    description: Local development
+  - url: https://calendar-service.your-azure-domain.com
+    description: Azure production
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Appointments
+    description: Patient appointment scheduling
+  - name: Medications
+    description: Patient medication management
+  - name: Reminders
+    description: Patient reminder management
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security Schemes
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from POST /v1/auth/login on user-service
+
+  schemas:
+    # ── Common ──────────────────────────────────────────────────────────────
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "unauthorized"
+      required: [error]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "operation completed successfully"
+      required: [message]
+
+    # ── Appointments ─────────────────────────────────────────────────────────
+    AppointmentStatus:
+      type: string
+      enum: [SCHEDULED, COMPLETED, CANCELLED, RESCHEDULED]
+      example: SCHEDULED
+
+    AppointmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "c1d2e3f4-a5b6-7890-cdef-012345678901"
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          description: Short description of the appointment
+          example: "Cardiology follow-up"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: Date and time of the appointment (RFC 3339)
+          example: "2024-02-15T09:00:00Z"
+        location:
+          type: string
+          nullable: true
+          description: Physical or virtual location of the appointment
+          example: "Room 204, Hospital Central"
+        notes:
+          type: string
+          nullable: true
+          description: Additional notes about the appointment
+          example: "Bring previous ECG results"
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-20T08:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-20T08:00:00Z"
+      required: [id, patientId, title, scheduledAt, status, createdAt, updatedAt]
+
+    CreateAppointmentRequest:
+      type: object
+      required: [title, scheduledAt]
+      properties:
+        title:
+          type: string
+          description: Short description of the appointment
+          example: "Cardiology follow-up"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: Date and time of the appointment (RFC 3339)
+          example: "2024-02-15T09:00:00Z"
+        location:
+          type: string
+          description: Physical or virtual location (optional)
+          example: "Room 204, Hospital Central"
+        notes:
+          type: string
+          description: Additional notes (optional)
+          example: "Bring previous ECG results"
+
+    UpdateAppointmentRequest:
+      type: object
+      description: All fields are optional; only provided fields are updated.
+      properties:
+        title:
+          type: string
+          example: "Neurology consultation"
+        scheduledAt:
+          type: string
+          format: date-time
+          example: "2024-02-20T11:00:00Z"
+        location:
+          type: string
+          example: "Telemedicine"
+        notes:
+          type: string
+          example: "Video call link will be sent by email"
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+
+    AppointmentListResponse:
+      type: object
+      properties:
+        appointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppointmentResponse'
+      required: [appointments]
+
+    # ── Medications ──────────────────────────────────────────────────────────
+    MedicationFrequency:
+      type: string
+      enum: [DAILY, TWICE_DAILY, THREE_TIMES_DAILY, WEEKLY, AS_NEEDED]
+      example: TWICE_DAILY
+
+    MedicationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d2e3f4a5-b6c7-8901-defa-123456789012"
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: Medication name
+          example: "Metformin 500mg"
+        dosage:
+          type: string
+          description: Dosage amount and unit
+          example: "500mg"
+        frequency:
+          $ref: '#/components/schemas/MedicationFrequency'
+        scheduledTimes:
+          type: array
+          items:
+            type: string
+            pattern: '^([01]\d|2[0-3]):([0-5]\d)$'
+          description: Local times (HH:MM) when the medication should be taken
+          example: ["08:00", "20:00"]
+        startDate:
+          type: string
+          format: date
+          description: Date when the medication regimen begins
+          example: "2024-01-15"
+        endDate:
+          type: string
+          format: date
+          nullable: true
+          description: Date when the medication regimen ends; null if ongoing
+          example: "2024-06-15"
+        notes:
+          type: string
+          nullable: true
+          description: Additional instructions or notes
+          example: "Take with food"
+        isActive:
+          type: boolean
+          description: Whether this medication is currently active
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-10T08:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-10T08:00:00Z"
+      required: [id, patientId, name, dosage, frequency, scheduledTimes, startDate, isActive, createdAt, updatedAt]
+
+    CreateMedicationRequest:
+      type: object
+      required: [name, dosage, frequency, scheduledTimes, startDate]
+      properties:
+        name:
+          type: string
+          example: "Metformin 500mg"
+        dosage:
+          type: string
+          example: "500mg"
+        frequency:
+          $ref: '#/components/schemas/MedicationFrequency'
+        scheduledTimes:
+          type: array
+          items:
+            type: string
+            pattern: '^([01]\d|2[0-3]):([0-5]\d)$'
+          description: Local times (HH:MM) when the medication should be taken
+          example: ["08:00", "20:00"]
+        startDate:
+          type: string
+          format: date
+          example: "2024-01-15"
+        endDate:
+          type: string
+          format: date
+          description: End date of the regimen (optional — omit for ongoing)
+          example: "2024-06-15"
+        notes:
+          type: string
+          description: Additional instructions (optional)
+          example: "Take with food"
+
+    UpdateMedicationRequest:
+      type: object
+      description: All fields are optional; only provided fields are updated.
+      properties:
+        name:
+          type: string
+          example: "Metformin 1000mg"
+        dosage:
+          type: string
+          example: "1000mg"
+        frequency:
+          $ref: '#/components/schemas/MedicationFrequency'
+        scheduledTimes:
+          type: array
+          items:
+            type: string
+            pattern: '^([01]\d|2[0-3]):([0-5]\d)$'
+          example: ["07:00", "14:00", "21:00"]
+        startDate:
+          type: string
+          format: date
+          example: "2024-02-01"
+        endDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2024-12-31"
+        notes:
+          type: string
+          example: "Increased dosage — monitor blood glucose"
+
+    MedicationListResponse:
+      type: object
+      properties:
+        medications:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedicationResponse'
+      required: [medications]
+
+    # ── Reminders ────────────────────────────────────────────────────────────
+    ReminderRecurrence:
+      type: string
+      enum: [NONE, DAILY, WEEKLY, MONTHLY]
+      description: How often the reminder repeats after its initial fire time
+      example: DAILY
+
+    ReminderStatus:
+      type: string
+      enum: [PENDING, SENT, CANCELLED]
+      example: PENDING
+
+    ReminderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "e3f4a5b6-c7d8-9012-efab-234567890123"
+        patientId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          description: Short title for the reminder
+          example: "Take evening medication"
+        message:
+          type: string
+          description: Full reminder message sent as push notification
+          example: "Time to take your Metformin 500mg dose"
+        reminderAt:
+          type: string
+          format: date-time
+          description: First (or next) scheduled fire time (RFC 3339)
+          example: "2024-01-15T20:00:00Z"
+        recurrence:
+          $ref: '#/components/schemas/ReminderRecurrence'
+        status:
+          $ref: '#/components/schemas/ReminderStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-10T08:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-10T08:00:00Z"
+      required: [id, patientId, title, message, reminderAt, recurrence, status, createdAt, updatedAt]
+
+    CreateReminderRequest:
+      type: object
+      required: [title, message, reminderAt, recurrence]
+      properties:
+        title:
+          type: string
+          example: "Take evening medication"
+        message:
+          type: string
+          example: "Time to take your Metformin 500mg dose"
+        reminderAt:
+          type: string
+          format: date-time
+          description: First scheduled fire time (RFC 3339)
+          example: "2024-01-15T20:00:00Z"
+        recurrence:
+          $ref: '#/components/schemas/ReminderRecurrence'
+
+    UpdateReminderRequest:
+      type: object
+      description: All fields are optional; only provided fields are updated.
+      properties:
+        title:
+          type: string
+          example: "Morning medication reminder"
+        message:
+          type: string
+          example: "Remember to take your morning dose"
+        reminderAt:
+          type: string
+          format: date-time
+          example: "2024-01-16T08:00:00Z"
+        recurrence:
+          $ref: '#/components/schemas/ReminderRecurrence'
+
+    ReminderListResponse:
+      type: object
+      properties:
+        reminders:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReminderResponse'
+      required: [reminders]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns 200 when the service is up. No authentication required.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: calendar-service
+                required: [status, service]
+
+  # ── Appointments ──────────────────────────────────────────────────────────
+  /v1/patients/{id}/appointments:
+    post:
+      tags: [Appointments]
+      summary: Create appointment
+      description: |
+        Schedules a new appointment for the specified patient.
+        **Requires DOCTOR role.**
+      operationId: createAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAppointmentRequest'
+      responses:
+        '201':
+          description: Appointment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Appointments]
+      summary: List appointments
+      description: |
+        Returns appointments for the specified patient.
+
+        Use `period` to filter by time window. If omitted, all appointments are returned.
+
+        | period | Description |
+        |--------|-------------|
+        | `day`   | Only appointments on the reference date |
+        | `week`  | ISO week (Mon–Sun) that contains the reference date |
+        | `month` | Calendar month of the reference date |
+        | `year`  | Calendar year of the reference date |
+
+        The `date` parameter is optional; if omitted the server uses today's UTC date.
+      operationId: listAppointments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: period
+          in: query
+          required: false
+          description: Time window to filter appointments
+          schema:
+            type: string
+            enum: [day, week, month, year]
+          example: week
+        - name: date
+          in: query
+          required: false
+          description: "Reference date for the period (YYYY-MM-DD). Defaults to today."
+          schema:
+            type: string
+            format: date
+          example: "2024-06-15"
+      responses:
+        '200':
+          description: List of appointments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentListResponse'
+        '400':
+          description: Invalid period or date format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/appointments/{apptId}:
+    get:
+      tags: [Appointments]
+      summary: Get appointment by ID
+      description: Returns a single appointment by ID. Accessible by all authenticated roles.
+      operationId: getAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: apptId
+          in: path
+          description: Appointment UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "c1d2e3f4-a5b6-7890-cdef-012345678901"
+      responses:
+        '200':
+          description: Appointment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentResponse'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Appointment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Appointments]
+      summary: Update appointment
+      description: |
+        Updates one or more fields of an existing appointment.
+        **Requires DOCTOR role.**
+      operationId: updateAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: apptId
+          in: path
+          description: Appointment UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "c1d2e3f4-a5b6-7890-cdef-012345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAppointmentRequest'
+      responses:
+        '200':
+          description: Appointment updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Appointment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Appointments]
+      summary: Delete appointment
+      description: |
+        Permanently deletes an appointment record.
+        **Requires DOCTOR role.**
+      operationId: deleteAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: apptId
+          in: path
+          description: Appointment UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "c1d2e3f4-a5b6-7890-cdef-012345678901"
+      responses:
+        '200':
+          description: Appointment deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "appointment deleted successfully"
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Appointment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Medications ───────────────────────────────────────────────────────────
+  /v1/patients/{id}/medications:
+    post:
+      tags: [Medications]
+      summary: Create medication
+      description: |
+        Adds a new medication to the patient's medication schedule.
+        **Requires DOCTOR role.**
+      operationId: createMedication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMedicationRequest'
+      responses:
+        '201':
+          description: Medication created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicationResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Medications]
+      summary: List medications
+      description: |
+        Returns the patient's medication list. Use the `active` query parameter
+        to filter to currently active medications only. Accessible by all authenticated roles.
+      operationId: listMedications
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: active
+          in: query
+          description: When true, returns only active medications (isActive=true).
+          required: false
+          schema:
+            type: boolean
+          example: true
+      responses:
+        '200':
+          description: List of medications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicationListResponse'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/medications/{medId}:
+    get:
+      tags: [Medications]
+      summary: Get medication by ID
+      description: Returns a single medication record by ID. Accessible by all authenticated roles.
+      operationId: getMedication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: medId
+          in: path
+          description: Medication UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "d2e3f4a5-b6c7-8901-defa-123456789012"
+      responses:
+        '200':
+          description: Medication found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicationResponse'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Medication not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Medications]
+      summary: Update medication
+      description: |
+        Updates one or more fields of an existing medication record.
+        **Requires DOCTOR role.**
+      operationId: updateMedication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: medId
+          in: path
+          description: Medication UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "d2e3f4a5-b6c7-8901-defa-123456789012"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMedicationRequest'
+      responses:
+        '200':
+          description: Medication updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicationResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Medication not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Medications]
+      summary: Deactivate medication
+      description: |
+        Soft-deletes a medication by setting `isActive` to `false`.
+        The record is retained for historical audit purposes.
+        **Requires DOCTOR role.**
+      operationId: deactivateMedication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: medId
+          in: path
+          description: Medication UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "d2e3f4a5-b6c7-8901-defa-123456789012"
+      responses:
+        '200':
+          description: Medication deactivated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "medication deactivated successfully"
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role (DOCTOR required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Medication not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Reminders ─────────────────────────────────────────────────────────────
+  /v1/patients/{id}/reminders:
+    post:
+      tags: [Reminders]
+      summary: Create reminder
+      description: |
+        Creates a new reminder for the specified patient.
+        Accessible by all authenticated roles (DOCTOR, PATIENT, CARETAKER).
+      operationId: createReminder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReminderRequest'
+      responses:
+        '201':
+          description: Reminder created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Reminders]
+      summary: List reminders
+      description: |
+        Returns reminders for the specified patient.
+
+        Use `period` to filter by time window. If omitted, all reminders are returned.
+
+        | period | Description |
+        |--------|-------------|
+        | `day`   | Only reminders on the reference date |
+        | `week`  | ISO week (Mon–Sun) that contains the reference date |
+        | `month` | Calendar month of the reference date |
+        | `year`  | Calendar year of the reference date |
+
+        The `date` parameter is optional; if omitted the server uses today's UTC date.
+      operationId: listReminders
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: period
+          in: query
+          required: false
+          description: Time window to filter reminders
+          schema:
+            type: string
+            enum: [day, week, month, year]
+          example: month
+        - name: date
+          in: query
+          required: false
+          description: "Reference date for the period (YYYY-MM-DD). Defaults to today."
+          schema:
+            type: string
+            format: date
+          example: "2024-06-15"
+      responses:
+        '200':
+          description: List of reminders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderListResponse'
+        '400':
+          description: Invalid period or date format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/reminders/today:
+    get:
+      tags: [Reminders]
+      summary: List today's reminders
+      description: |
+        Returns all reminders scheduled for today (calendar day in server local time)
+        for the specified patient. Accessible by all authenticated roles.
+      operationId: listTodayReminders
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Today's reminders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderListResponse'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/patients/{id}/reminders/{remId}:
+    get:
+      tags: [Reminders]
+      summary: Get reminder by ID
+      description: Returns a single reminder by ID. Accessible by all authenticated roles.
+      operationId: getReminder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: remId
+          in: path
+          description: Reminder UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "e3f4a5b6-c7d8-9012-efab-234567890123"
+      responses:
+        '200':
+          description: Reminder found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderResponse'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Reminders]
+      summary: Update reminder
+      description: |
+        Updates one or more fields of an existing reminder.
+        Accessible by all authenticated roles.
+      operationId: updateReminder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: remId
+          in: path
+          description: Reminder UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "e3f4a5b6-c7d8-9012-efab-234567890123"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReminderRequest'
+      responses:
+        '200':
+          description: Reminder updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Reminders]
+      summary: Cancel reminder
+      description: |
+        Soft-cancels a reminder by setting its status to `CANCELLED`.
+        The record is retained for audit purposes.
+        Accessible by all authenticated roles.
+      operationId: cancelReminder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Patient UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: remId
+          in: path
+          description: Reminder UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "e3f4a5b6-c7d8-9012-efab-234567890123"
+      responses:
+        '200':
+          description: Reminder cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "reminder cancelled successfully"
+        '401':
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
