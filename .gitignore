@@ -1,39 +1,74 @@
-# Binaries
+# ============================================================
+#  sentinel-health-engine-be — .gitignore
+# ============================================================
+
+# ── Go ────────────────────────────────────────────────────────
+# Binarios compilados
+bin/
+dist/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-bin/
-dist/
 
-# Environment files — NEVER commit secrets
-# .env.example files are intentionally committed (no secrets, just documentation)
-.env
-.env.*
-!.env.example
-
-# Firebase credentials
-firebase-credentials.json
-*-credentials.json
-*-service-account.json
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker overrides
-docker-compose.override.yml
-
-# Test coverage
+# Archivos de test y cobertura
+*.test
 coverage.out
 coverage.html
 
-# Logs
+# Vendor (si se usa, descomenta)
+# vendor/
+
+# ── Variables de entorno y secretos ───────────────────────────
+# Los archivos .env.example SÍ se suben (son documentación, no contienen secretos reales)
+.env
+.env.*
+!.env.example
+local.settings.json
+
+# Credenciales de servicios (nunca al repo)
+*-credentials.json
+*-service-account.json
+firebase-credentials.json
+
+# ── Azure ─────────────────────────────────────────────────────
+.azure/
+
+# ── IDEs y editores ───────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── Sistema operativo ─────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Docker ────────────────────────────────────────────────────
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── Logs y temporales ────────────────────────────────────────
 *.log
+logs/
+tmp/
+*.tmp
+*.temp
+.cache/
+
+# ── Certificados y llaves ─────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
