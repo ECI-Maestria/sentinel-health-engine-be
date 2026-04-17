@@ -35,6 +35,9 @@ firebase-credentials.json
 # ── Azure ─────────────────────────────────────────────────────
 .azure/
 
+# ── Claude Code ───────────────────────────────────────────────
+.claude/
+
 # ── IDEs y editores ───────────────────────────────────────────
 .vscode/
 !.vscode/extensions.json
