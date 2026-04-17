@@ -43,6 +43,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sentinel Health Engine – API Docs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='10' fill='%233DAA7A'/%3E%3Ctext x='24' y='32' font-family='Arial' font-size='18' font-weight='bold' text-anchor='middle' fill='%23FFFFFF' letter-spacing='1'%3ESH%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
   <style>
     html { box-sizing: border-box; overflow-y: scroll; }

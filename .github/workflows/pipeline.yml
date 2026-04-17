@@ -1,0 +1,168 @@
+name: "Sentinel Health Engine — CI/CD"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  ACR_SERVER: crsentinelhe.azurecr.io
+  ACR_NAME: crsentinelhe
+  RESOURCE_GROUP: rg-sentinel-health-engine
+
+# ─────────────────────────────────────────────────────────────
+# Stage 1 — 🏗️ BUILD
+# Compiles every service. All must succeed before tests run.
+# ─────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: "🏗️ Build · ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        service: [telemetry-service, health-rules-service, alerts-service]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/${{ matrix.service }}/go.mod
+          cache-dependency-path: |
+            services/${{ matrix.service }}/go.sum
+            shared/go.sum
+
+      - name: Build
+        working-directory: services/${{ matrix.service }}
+        run: go build ./...
+
+# ─────────────────────────────────────────────────────────────
+# Stage 2 — 🧪 TEST
+# Runs unit tests and generates coverage. Requires Stage 1.
+# ─────────────────────────────────────────────────────────────
+  test:
+    name: "🧪 Test · ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - service: telemetry-service
+            coverage_out: coverage/telemetry.out
+          - service: health-rules-service
+            coverage_out: coverage/health-rules.out
+          - service: alerts-service
+            coverage_out: coverage/alerts.out
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/${{ matrix.service }}/go.mod
+          cache-dependency-path: |
+            services/${{ matrix.service }}/go.sum
+            shared/go.sum
+
+      - name: Run tests with coverage
+        working-directory: services/${{ matrix.service }}
+        run: |
+          mkdir -p ../../coverage
+          go test ./... -v -count=1 -timeout 120s \
+            -coverprofile=../../${{ matrix.coverage_out }} \
+            -covermode=atomic
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.service }}
+          path: ${{ matrix.coverage_out }}
+          retention-days: 1
+
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — 🔍 SONAR ANALYSIS
+# Static analysis and coverage report. Requires Stage 2.
+# ─────────────────────────────────────────────────────────────
+  sonar:
+    name: "🔍 SonarCloud Analysis"
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: coverage/
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+# ─────────────────────────────────────────────────────────────
+# Stage 4 — 🚀 DEPLOY
+# Builds images, pushes to ACR and deploys to Container Apps.
+# Runs only on push to main. Requires Stage 3.
+# ─────────────────────────────────────────────────────────────
+  deploy:
+    name: "🚀 Deploy · ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    needs: sonar
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    strategy:
+      fail-fast: true
+      matrix:
+        service: [telemetry-service, health-rules-service, alerts-service]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build & Push image
+        run: |
+          IMAGE="${{ env.ACR_SERVER }}/${{ matrix.service }}"
+          docker build \
+            -t "${IMAGE}:${{ github.sha }}" \
+            -t "${IMAGE}:latest" \
+            -f "services/${{ matrix.service }}/Dockerfile" \
+            .
+          docker push "${IMAGE}:${{ github.sha }}"
+          docker push "${IMAGE}:latest"
+
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            --name "${{ matrix.service }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --image "${{ env.ACR_SERVER }}/${{ matrix.service }}:${{ github.sha }}"
+
+      - name: Verify deployment
+        run: |
+          az containerapp revision list \
+            --name "${{ matrix.service }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "[0].{revision:name, state:properties.runningState, image:properties.template.containers[0].image}" \
+            --output table

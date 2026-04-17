@@ -33,6 +33,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <title>Sentinel Health Engine – Calendar API</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='10' fill='%233DAA7A'/%3E%3Ctext x='24' y='32' font-family='Arial' font-size='18' font-weight='bold' text-anchor='middle' fill='%23FFFFFF' letter-spacing='1'%3ESH%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
   <style>html{box-sizing:border-box;overflow-y:scroll;}*,*:before,*:after{box-sizing:inherit;}body{margin:0;background:#fafafa;}.topbar{display:none;}#custom-header{background:#1a202c;color:#e2e8f0;padding:14px 24px;display:flex;align-items:center;gap:12px;font-family:sans-serif;}#custom-header h1{font-size:1.1rem;margin:0;font-weight:600;}#custom-header span{font-size:0.8rem;opacity:0.6;}</style>
 </head>
